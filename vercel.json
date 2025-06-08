@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
+  ],
+  "env": {
+    "DATABASE_URL": "postgresql://neondb_owner:npg_Mi6ATvx5lVrN@ep-silent-lab-a9y636bg-pooler.gwc.azure.neon.tech/ai_contatori?sslmode=require",
+    "VAPI_PRIVATE_KEY": "f52ccbc7-4d9a-446a-903f-eca8d4ae5156",
+    "VAPI_PUBLIC_KEY": "6f95e65d-e182-4fec-b72c-a3886c5f8372",
+    "GATEWAY_API_TOKEN": "qsKnr3jISnKqJRSs_HawaUyEQjTpkhLYFVjbEzRc3swX4haONb_IZZkUx7hB3cF-",
+    "NODE_ENV": "production"
+  }
+}
