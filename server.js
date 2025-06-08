@@ -30,9 +30,12 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Initialize database
-const initDatabase = async () => {
+// MANUAL DATABASE INITIALIZATION ENDPOINT
+app.get('/init-database', async (req, res) => {
   try {
+    console.log('🔧 Initializing database...');
+    
+    // Create committenti table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS committenti (
         id SERIAL PRIMARY KEY,
@@ -47,7 +50,9 @@ const initDatabase = async () => {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    console.log('✅ Committenti table created');
 
+    // Create operatori table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS operatori (
         id SERIAL PRIMARY KEY,
@@ -61,7 +66,9 @@ const initDatabase = async () => {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    console.log('✅ Operatori table created');
 
+    // Create contatori table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS contatori (
         id SERIAL PRIMARY KEY,
@@ -91,7 +98,9 @@ const initDatabase = async () => {
         last_updated TIMESTAMP DEFAULT NOW()
       )
     `);
+    console.log('✅ Contatori table created');
 
+    // Create call_logs table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS call_logs (
         id SERIAL PRIMARY KEY,
@@ -106,17 +115,9 @@ const initDatabase = async () => {
         call_date TIMESTAMP DEFAULT NOW()
       )
     `);
+    console.log('✅ Call_logs table created');
 
-    console.log('✅ Database schema created');
-    await insertSampleData();
-    
-  } catch (error) {
-    console.error('❌ Database init error:', error);
-  }
-};
-
-const insertSampleData = async () => {
-  try {
+    // Insert sample data
     await pool.query(`
       INSERT INTO committenti (nome, codice, citta, servizi, colore, contatto_email, orari_operativi, descrizione_attivita)
       VALUES 
@@ -124,6 +125,7 @@ const insertSampleData = async () => {
         ('Roma Distribuzione', 'RD002', 'Roma', ARRAY['gas', 'elettrico'], 'green', 'tecnici@romadist.it', '07:30-17:30', 'Installazione contatori gas ed elettrici zona Roma Nord')
       ON CONFLICT (codice) DO NOTHING
     `);
+    console.log('✅ Sample committenti inserted');
 
     await pool.query(`
       INSERT INTO operatori (nome, telefono, whatsapp, zone_competenza, specializzazioni)
@@ -132,10 +134,55 @@ const insertSampleData = async () => {
         ('Luca Bianchi', '+393337654321', '+393337654321', ARRAY['Milano Sud', 'Bocconi'], ARRAY['elettrico', 'multi'])
       ON CONFLICT DO NOTHING
     `);
+    console.log('✅ Sample operatori inserted');
 
-    console.log('✅ Sample data inserted');
+    // Insert sample contatori for testing
+    await pool.query(`
+      INSERT INTO contatori (
+        serial_number, customer_name, customer_phone, address,
+        service_type, committente_id, operatore_id, cantiere,
+        pre_assigned_date, pre_assigned_time_slot, needs_confirmation
+      ) VALUES 
+        ('M240567891', 'Mario Rossi', '+393331234567', 'Via Roma 123, Milano', 'acqua', 1, 1, 'CNT-MI-001', '2025-06-10', '09:00-12:00', true),
+        ('M240567892', 'Laura Bianchi', '+393337654321', 'Corso Buenos Aires 45, Milano', 'gas', 1, 1, 'CNT-MI-001', '2025-06-10', '14:00-17:00', true),
+        ('M240567893', 'Giuseppe Verdi', '+393339876543', 'Via Brera 78, Milano', 'elettrico', 1, 2, 'CNT-MI-002', '2025-06-11', '08:00-11:00', true)
+      ON CONFLICT (serial_number) DO NOTHING
+    `);
+    console.log('✅ Sample contatori inserted');
+
+    res.json({
+      success: true,
+      message: 'Database initialized successfully!',
+      tables_created: ['committenti', 'operatori', 'contatori', 'call_logs'],
+      sample_data: 'inserted'
+    });
+
   } catch (error) {
-    console.error('❌ Sample data error:', error);
+    console.error('❌ Database initialization error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      details: 'Failed to initialize database'
+    });
+  }
+});
+
+// Initialize database on startup (with error handling)
+const initDatabase = async () => {
+  try {
+    console.log('🔧 Auto-initializing database on startup...');
+    await pool.query('SELECT 1'); // Test connection
+    console.log('✅ Database connection successful');
+    
+    // Try to create tables silently
+    try {
+      const result = await pool.query('SELECT COUNT(*) FROM contatori');
+      console.log('✅ Database already initialized');
+    } catch (error) {
+      console.log('⚠️ Database not initialized, use /init-database endpoint');
+    }
+    
+  } catch (error) {
+    console.error('❌ Database connection error:', error.message);
   }
 };
 
@@ -567,8 +614,12 @@ app.get('/', (req, res) => {
             .status { padding: 15px; margin: 10px 0; border-radius: 5px; }
             .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
             .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+            .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
             .endpoint { background: #f8f9fa; padding: 10px; margin: 5px 0; border-left: 3px solid #007bff; }
             button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+            button:hover { background: #0056b3; }
+            .init-btn { background: #28a745; }
+            .init-btn:hover { background: #218838; }
         </style>
     </head>
     <body>
@@ -579,11 +630,15 @@ app.get('/', (req, res) => {
                 ✅ Backend attivo e funzionante
             </div>
             
-            <div class="status info">
-                📞 Pronto per ricevere webhook Vapi.ai
+            <div class="status warning">
+                ⚠️ Se vedi errori database, clicca "Inizializza Database" qui sotto
             </div>
             
+            <h3>🔧 Database Setup:</h3>
+            <button class="init-btn" onclick="initDatabase()">🛠️ Inizializza Database</button>
+            
             <h3>📊 API Endpoints:</h3>
+            <div class="endpoint"><strong>GET /init-database</strong> - Inizializza database e tabelle</div>
             <div class="endpoint"><strong>POST /vapi-webhook</strong> - Webhook per Vapi.ai</div>
             <div class="endpoint"><strong>GET /api/dashboard</strong> - Statistiche sistema</div>
             <div class="endpoint"><strong>POST /upload-excel</strong> - Import contatori</div>
@@ -591,27 +646,76 @@ app.get('/', (req, res) => {
             <h3>🔧 Test Rapidi:</h3>
             <button onclick="testDashboard()">Test Dashboard API</button>
             <button onclick="testWebhook()">Test Webhook</button>
+            <button onclick="testContatori()">Test Contatori</button>
             
             <div id="results" style="margin-top: 20px;"></div>
+            
+            <h3>📱 Prossimi Passi:</h3>
+            <ol>
+                <li><strong>Inizializza database</strong> (clicca bottone sopra)</li>
+                <li>Configura Voice Agent su Vapi.ai con questo URL webhook</li>
+                <li>Testa con matricola: M240567891</li>
+                <li>Go-live!</li>
+            </ol>
         </div>
         
         <script>
+            async function initDatabase() {
+                try {
+                    document.getElementById('results').innerHTML = '<div class="status info">🔧 Inizializzando database...</div>';
+                    const response = await fetch('/init-database');
+                    const data = await response.json();
+                    if (data.success) {
+                        document.getElementById('results').innerHTML = 
+                            '<div class="status success">✅ Database inizializzato: ' + JSON.stringify(data, null, 2) + '</div>';
+                    } else {
+                        document.getElementById('results').innerHTML = 
+                            '<div class="status error">❌ Errore: ' + JSON.stringify(data, null, 2) + '</div>';
+                    }
+                } catch (error) {
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status error">❌ Errore: ' + error.message + '</div>';
+                }
+            }
+            
             async function testDashboard() {
-                const response = await fetch('/api/dashboard');
-                const data = await response.json();
-                document.getElementById('results').innerHTML = 
-                    '<div class="status success">Dashboard: ' + JSON.stringify(data, null, 2) + '</div>';
+                try {
+                    const response = await fetch('/api/dashboard');
+                    const data = await response.json();
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status success">✅ Dashboard: ' + JSON.stringify(data, null, 2) + '</div>';
+                } catch (error) {
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status error">❌ Errore: ' + error.message + '</div>';
+                }
             }
             
             async function testWebhook() {
-                const response = await fetch('/vapi-webhook', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: { type: 'test' } })
-                });
-                const data = await response.json();
-                document.getElementById('results').innerHTML = 
-                    '<div class="status success">Webhook: ' + JSON.stringify(data) + '</div>';
+                try {
+                    const response = await fetch('/vapi-webhook', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: { type: 'test' } })
+                    });
+                    const data = await response.json();
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status success">✅ Webhook: ' + JSON.stringify(data) + '</div>';
+                } catch (error) {
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status error">❌ Errore: ' + error.message + '</div>';
+                }
+            }
+            
+            async function testContatori() {
+                try {
+                    const response = await fetch('/api/contatori');
+                    const data = await response.json();
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status success">✅ Contatori (' + data.length + ' trovati): ' + JSON.stringify(data.slice(0,3), null, 2) + '...</div>';
+                } catch (error) {
+                    document.getElementById('results').innerHTML = 
+                        '<div class="status error">❌ Errore: ' + error.message + '</div>';
+                }
             }
         </script>
     </body>
@@ -628,6 +732,9 @@ const startServer = async () => {
     
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`🛠️ Database init: ${process.env.VERCEL_URL || 'http://localhost:3000'}/init-database`);
+      console.log(`📞 Vapi webhook: ${process.env.VERCEL_URL || 'http://localhost:3000'}/vapi-webhook`);
+      console.log(`📊 Dashboard: ${process.env.VERCEL_URL || 'http://localhost:3000'}`);
       console.log(`✅ System ready!`);
     });
   } catch (error) {
